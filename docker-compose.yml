@@ -1,0 +1,27 @@
+
+
+services:
+  filtering-api:
+    build:
+      context: .                                
+      dockerfile: PashaInsuranceFiltering.WebAPI/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_ENVIRONMENT: "Development"
+      Filtering__Strategy: "JaroWinkler"   # or "Levenshtein"
+      Filtering__Threshold: "0.85"
+      Filtering__BannedWords__0: "secret"
+      Filtering__BannedWords__1: "password"
+      Filtering__BannedWords__2: "api key"
+      Filtering__BannedWords__3: "confidential"
+      Filtering__BannedWords__4: "card number"
+      Filtering__BannedWords__5: "credit card"
+      Filtering__BannedWords__6: "cvv"
+      Filtering__BannedWords__7: "şifrə"
+      Filtering__BannedWords__8: "gizli"
+      Filtering__BannedWords__9: "hesab nömrəsi"
+      Filtering__BannedWords__10: "kart nömrəsi"
+
+    restart: unless-stopped
