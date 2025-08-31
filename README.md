@@ -103,7 +103,7 @@ tests/
 Clone the repo:
 
 ```bash
-git clone https://github.com/username/PashaInsuranceFiltering.git
+git clone https://github.com/musaliimurat/PashaInsurance-Task-Heavy-String-Filtering-API.git
 cd PashaInsuranceFiltering
 ```
 
