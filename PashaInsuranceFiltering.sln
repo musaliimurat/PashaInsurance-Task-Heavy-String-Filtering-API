@@ -27,7 +27,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PashaInsuranceFiltering.Sha
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PashaInsuranceFiltering.Infrastructure", "PashaInsuranceFiltering.Infrastructure\PashaInsuranceFiltering.Infrastructure.csproj", "{3745F9C3-E481-45BF-BAFC-324D92ECF881}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PashalinsuranceFiltering.DependencyInjection", "PashalinsuranceFiltering.DependencyInjection\PashalinsuranceFiltering.DependencyInjection.csproj", "{1C2F47AA-3E29-47AC-B881-6212DC0E69D4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PashaInsuranceFiltering.DependencyInjection", "PashalinsuranceFiltering.DependencyInjection\PashaInsuranceFiltering.DependencyInjection.csproj", "{1C2F47AA-3E29-47AC-B881-6212DC0E69D4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PashaInsuranceFiltering.Tests.Unit", "PashaInsuranceFiltering.Tests.Unit\PashaInsuranceFiltering.Tests.Unit.csproj", "{85FD30D5-166F-47CA-8285-114F8C471D81}"
 EndProject

@@ -248,7 +248,7 @@ Response examples:
 // Pending
 {
   "uploadId": "11111111-1111-1111-1111-111111111111",
-  "status": "Pending",
+  "status": "Processing",
   "data": null
 }
 

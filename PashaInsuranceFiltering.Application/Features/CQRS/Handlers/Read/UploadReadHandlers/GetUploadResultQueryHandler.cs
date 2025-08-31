@@ -26,7 +26,7 @@ namespace PashaInsuranceFiltering.Application.Features.CQRS.Handlers.Read.Upload
                 return new ErrorDataResult<GetUploadResultQueryResult>("Not Found");
 
             if (!doc.IsProcessed)
-                return new SuccessDataResult<GetUploadResultQueryResult>(null,"Processing");
+                return new ErrorDataResult<GetUploadResultQueryResult>("Processing");
 
             var result = new GetUploadResultQueryResult
             {

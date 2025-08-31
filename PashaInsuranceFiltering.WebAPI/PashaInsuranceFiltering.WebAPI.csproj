@@ -17,7 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PashaInsuranceFiltering.Application\PashaInsuranceFiltering.Application.csproj" />
     <ProjectReference Include="..\PashaInsuranceFiltering.SharedKernel\PashaInsuranceFiltering.SharedKernel.Application.csproj" />
-    <ProjectReference Include="..\PashalinsuranceFiltering.DependencyInjection\PashalinsuranceFiltering.DependencyInjection.csproj" />
+    <ProjectReference Include="..\PashalinsuranceFiltering.DependencyInjection\PashaInsuranceFiltering.DependencyInjection.csproj" />
   </ItemGroup>
 
 </Project>
