@@ -16,10 +16,7 @@ namespace PashaInsuranceFiltering.Domain.ValueObjects
 
         public static FilteredText Create(string value)
         {
-            if (string.IsNullOrWhiteSpace(value))
-                throw new DomainValidationException("Filtered text cannot be null or whitespace.");
-
-            return new FilteredText(value);
+            return new FilteredText(value ?? string.Empty);
         }
 
         protected override IEnumerable<object?> GetEqualityComponents()
@@ -28,6 +25,7 @@ namespace PashaInsuranceFiltering.Domain.ValueObjects
         }
 
         public override string ToString() => Value;
+        public static FilteredText Empty() => new(string.Empty);
 
     }
 }

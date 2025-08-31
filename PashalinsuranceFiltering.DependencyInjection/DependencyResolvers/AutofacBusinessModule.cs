@@ -3,6 +3,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using PashaInsuranceFiltering.Application.Abstractions;
 using PashaInsuranceFiltering.Application.Common.Ports;
 using PashaInsuranceFiltering.Application.Features.CQRS.Commands.UploadCommands;
 using PashaInsuranceFiltering.Infrastructure.Background;
@@ -29,11 +30,6 @@ namespace PashalinsuranceFiltering.DependencyInjection.DependencyResolvers
             var appAssembly = typeof(UploadChunkCommand).Assembly;      // Application
             var infraAssembly = typeof(IUploadBuffer).Assembly;    // Infrastructure
 
-
-            container.RegisterType<InMemoryResultStore>()
-                      .As<IResultStore>()
-                     .SingleInstance();
-
             // MediatR handlers
             container.RegisterAssemblyTypes(appAssembly)
                      .AsClosedTypesOf(typeof(IRequestHandler<,>))
@@ -53,6 +49,10 @@ namespace PashalinsuranceFiltering.DependencyInjection.DependencyResolvers
             // Ports - InMemory adapters
             container.RegisterType<InMemoryUploadBuffer>()
                      .As<IUploadBuffer>()
+                     .SingleInstance();
+
+            container.RegisterType<InMemoryTextDocumentRepository>()
+                     .As<ITextDocumentRepository>()
                      .SingleInstance();
 
             // Queue

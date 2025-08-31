@@ -1,8 +1,13 @@
 ﻿using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.VisualStudio.TestPlatform.ObjectModel.Client;
+using PashaInsuranceFiltering.Application.Abstractions;
 using PashaInsuranceFiltering.Application.Common.Ports;
+using PashaInsuranceFiltering.Domain.Entities;
 using PashaInsuranceFiltering.Infrastructure.Background;
-using PashaInsuranceFiltering.Infrastructure.Messaging; 
+using PashaInsuranceFiltering.Infrastructure.Messaging;
+using PashaInsuranceFiltering.Infrastructure.Persistence.InMemory;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +15,20 @@ using Xunit;
 
 namespace PashaInsuranceFiltering.Tests.Unit.Background
 {
+    file static class TestHelpers
+    {
+        public static async Task WaitUntilAsync(Func<bool> cond, int timeoutMs = 2000, int stepMs = 20)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (cond()) return;
+                await Task.Delay(stepMs);
+            }
+            throw new TimeoutException("Condition not satisfied within timeout.");
+        }
+    }
+
     file sealed class FakeFilter : ITextFilter
     {
         public string Filter(string input, double threshold) => $"[{input}]";
@@ -17,87 +36,102 @@ namespace PashaInsuranceFiltering.Tests.Unit.Background
             => Task.FromResult(Filter(input, threshold));
     }
 
-    file sealed class FakeStore : IResultStore
+    file sealed class FakeTextDocumentRepository : ITextDocumentRepository
     {
-        private readonly ConcurrentDictionary<Guid, (ProcessingStatus Status, string? Data)> _map = new();
+        private readonly ConcurrentDictionary<Guid, TextDocument> _store = new();
 
-        public Task<(ProcessingStatus Status, string? Data)> GetAsync(Guid id, CancellationToken ct = default)
-            => Task.FromResult(_map.TryGetValue(id, out var v) ? v : (ProcessingStatus.NotFound, (string?)null));
+        public ConcurrentQueue<Guid> ProcessingLog { get; } = new();
 
-        public Task MarkPendingAsync(Guid id, CancellationToken ct = default)
+        public Task AddAsync(TextDocument entity, CancellationToken ct)
         {
-            _map.AddOrUpdate(id, (ProcessingStatus.Pending, null), (_, __) => (ProcessingStatus.Pending, null));
+            _store[entity.Id] = entity;
             return Task.CompletedTask;
         }
 
-        public Task MarkPendingIfAbsentAsync(Guid id, CancellationToken ct = default)
+        public Task<TextDocument?> GetAsync(Guid id, CancellationToken ct)
         {
-            _map.TryAdd(id, (ProcessingStatus.Pending, null));
+            _store.TryGetValue(id, out var entity);
+            return Task.FromResult(entity);
+        }
+
+        public Task UpdateAsync(TextDocument entity, CancellationToken ct)
+        {
+            ProcessingLog.Enqueue(entity.Id);
+            _store[entity.Id] = entity;
             return Task.CompletedTask;
         }
 
-        public Task StoreAsync(Guid id, string filteredText, CancellationToken ct = default)
-        {
-            _map[id] = (ProcessingStatus.Completed, filteredText ?? string.Empty);
-            return Task.CompletedTask;
-        }
+        public bool TryGet(Guid id, out TextDocument? doc) => _store.TryGetValue(id, out doc);
+        public TextDocument this[Guid id] => _store[id];
     }
 
     public class FilteringWorkerTests
     {
+
         [Fact]
-        public async Task Worker_should_filter_and_store_single_item()
+        public async Task WorkerShouldFilterAndPersistSingleDocument()
         {
             // arrange
-            var queue = new InMemoryProcessingQueue();
-            var filter = new FakeFilter();
-            var store = new FakeStore();
-            var worker = new FilteringWorker(queue, filter, store, NullLogger<FilteringWorker>.Instance, threshold: 0.8);
+            IProcessingQueue queue = new InMemoryProcessingQueue();
+            var repo = new FakeTextDocumentRepository();
+            ITextFilter filter = new FakeFilter();
+            var worker = new FilteringWorker(queue, repo, filter, NullLogger<FilteringWorker>.Instance, threshold: 0.8);
 
-            // act 
             await worker.StartAsync(CancellationToken.None);
 
             var id = Guid.NewGuid();
-            await queue.EnqueueAsync(id, "my name is murad");
+            var doc = new TextDocument(id, "my name is murad");
+            await repo.AddAsync(doc, CancellationToken.None);
 
-            await Task.Delay(150);
+            // act
+            await queue.EnqueueAsync(id, CancellationToken.None);
 
-            var (status, data) = await store.GetAsync(id);
+            // wait until processed
+            await TestHelpers.WaitUntilAsync(() =>
+                repo.TryGet(id, out var d) && d is not null && d.IsProcessed);
 
             // assert
-            status.Should().Be(ProcessingStatus.Completed);
-            data.Should().Be("[my name is murad]");
+            repo.TryGet(id, out var processed).Should().BeTrue();
+            processed!.IsProcessed.Should().BeTrue();
+            processed.FilteredText!.Value.Should().Be("[my name is murad]");
 
-            // cleanup
             await worker.StopAsync(CancellationToken.None);
         }
 
         [Fact]
-        public async Task WorkerShouldProcessMultipleItemsInOrderTheyAppearInQueue()
+        public async Task WorkerShouldProcessMultipleItemsInQueueOrder()
         {
-            var queue = new InMemoryProcessingQueue();
-            var filter = new FakeFilter();
-            var store = new FakeStore();
-            var worker = new FilteringWorker(queue, filter, store, NullLogger<FilteringWorker>.Instance, threshold: 0.85);
+            // arrange
+            IProcessingQueue queue = new InMemoryProcessingQueue();
+            var repo = new FakeTextDocumentRepository();
+            ITextFilter filter = new FakeFilter();
+            var worker = new FilteringWorker(queue, repo, filter, NullLogger<FilteringWorker>.Instance, threshold: 0.8);
 
             await worker.StartAsync(CancellationToken.None);
 
             var id1 = Guid.NewGuid();
             var id2 = Guid.NewGuid();
 
-            await queue.EnqueueAsync(id1, "first");
-            await queue.EnqueueAsync(id2, "second");
+            await repo.AddAsync(new TextDocument(id1, "first"), CancellationToken.None);
+            await repo.AddAsync(new TextDocument(id2, "second"), CancellationToken.None);
 
-            await Task.Delay(200);
+            // act
+            await queue.EnqueueAsync(id1, CancellationToken.None);
+            await queue.EnqueueAsync(id2, CancellationToken.None);
 
-            var r1 = await store.GetAsync(id1);
-            var r2 = await store.GetAsync(id2);
+            // wait until both processed
+            await TestHelpers.WaitUntilAsync(() =>
+                repo.TryGet(id1, out var d1) && d1 is { IsProcessed: true } &&
+                repo.TryGet(id2, out var d2) && d2 is { IsProcessed: true });
 
-            r1.Status.Should().Be(ProcessingStatus.Completed);
-            r1.Data.Should().Be("[first]");
+            // assert data
+            repo[id1].FilteredText!.Value.Should().Be("[first]");
+            repo[id2].FilteredText!.Value.Should().Be("[second]");
 
-            r2.Status.Should().Be(ProcessingStatus.Completed);
-            r2.Data.Should().Be("[second]");
+            repo.ProcessingLog.TryDequeue(out var p1).Should().BeTrue();
+            repo.ProcessingLog.TryDequeue(out var p2).Should().BeTrue();
+            p1.Should().Be(id1);
+            p2.Should().Be(id2);
 
             await worker.StopAsync(CancellationToken.None);
         }
@@ -105,14 +139,12 @@ namespace PashaInsuranceFiltering.Tests.Unit.Background
         [Fact]
         public async Task WorkerShouldStopGracefullyOnCancellation()
         {
-            var queue = new InMemoryProcessingQueue();
-            var worker = new FilteringWorker(queue, new FakeFilter(), new FakeStore(), NullLogger<FilteringWorker>.Instance, 0.8);
+            IProcessingQueue queue = new InMemoryProcessingQueue();
+            var repo = new FakeTextDocumentRepository();
+            ITextFilter filter = new FakeFilter();
+            var worker = new FilteringWorker(queue, repo, filter, NullLogger<FilteringWorker>.Instance, threshold: 0.8);
 
-            var cts = new CancellationTokenSource();
-
-            await worker.StartAsync(cts.Token);
-
-            cts.Cancel(); 
+            await worker.StartAsync(CancellationToken.None);
             await worker.StopAsync(CancellationToken.None);
 
             true.Should().BeTrue();

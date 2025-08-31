@@ -8,7 +8,7 @@ namespace PashaInsuranceFiltering.Application.Features.CQRS.Results.UploadResult
 {
     public sealed class GetUploadResultQueryResult
     {
-        public string? Data { get; set; }
+        public string Data { get; set; }
 
     }
 }

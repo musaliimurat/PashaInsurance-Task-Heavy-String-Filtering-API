@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PashaInsuranceFiltering.Domain\PashaInsuranceFiltering.Domain.csproj" />
     <ProjectReference Include="..\PashaInsuranceFiltering.SharedKernel\PashaInsuranceFiltering.SharedKernel.Application.csproj" />
   </ItemGroup>
 

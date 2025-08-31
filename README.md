@@ -22,7 +22,7 @@ This project follows modern enterprise-grade architecture practices:
 - **Background Processing**  
   `FilteringWorker` runs as a BackgroundService: dequeues full text, applies filtering, stores result.
 - **In-memory adapters**  
-  For demo/testing: `InMemoryUploadBuffer`, `InMemoryProcessingQueue`, `InMemoryResultStore`, `InMemoryTextFilter`. In real-world scenarios, replace with DB/Queue providers.
+  For demo/testing: `InMemoryUploadBuffer`, `InMemoryProcessingQueue`, `InMemoryTextDocumentRepository`, `InMemoryTextFilter`. In real-world scenarios, replace with DB/Queue providers.
 
 ---
 
@@ -44,7 +44,6 @@ This separation enforces **purity** and prevents **dependency cycles**:
   - Contains **application-level cross-cutting types**:
     - `Result`, `DataResult<T>`, `SuccessResult`, `ErrorResult`, etc.
     - MediatR **pipeline behaviors** (e.g. `ValidationBehavior<,>`)
-    - Application service abstractions (e.g. `IClock`) if needed
   - **May depend** on application packages (MediatR, FluentValidation).
   - Purpose: Multiple modules can reuse application concerns, future-proof for modular monolith or microservices.
 
@@ -65,11 +64,13 @@ src/
  │
  ├─ PashaInsuranceFiltering.Application/          # Application Layer
  │   ├─ Features/Upload (Commands, Validators, Handlers)
- │   ├─ Features/Result (Queries, Handlers, DTOs)
- │   └─ Common/Ports (IUploadBuffer, IProcessingQueue, IResultStore, ITextFilter, ISimilarityMetric)
+ │   ├─ Features/Result (Queries, QueryResults, Handlers)
+ │   └─ Common/Ports (IUploadBuffer, IProcessingQueue, ITextFilter, ISimilarityMetric)
+ │   └─ Abstractions (ITextDocumentRepository)
+
  │
  ├─ PashaInsuranceFiltering.Infrastructure/       # Infrastructure Layer
- │   ├─ Persistence/InMemory (InMemoryUploadBuffer, InMemoryResultStore)
+ │   ├─ Persistence/InMemory (InMemoryUploadBuffer, InMemoryTextDocumentRepository)
  │   ├─ Messaging (InMemoryProcessingQueue)
  │   ├─ Filtering (InMemoryTextFilter, JaroWinklerMetric, LevenshteinMetric)
  │   └─ Background (FilteringWorker)

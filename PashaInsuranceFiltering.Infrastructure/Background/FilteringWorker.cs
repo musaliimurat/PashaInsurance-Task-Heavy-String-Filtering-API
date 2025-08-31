@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PashaInsuranceFiltering.Application.Abstractions;
 using PashaInsuranceFiltering.Application.Common.Ports;
 using PashaInsuranceFiltering.Infrastructure.Messaging;
 
@@ -10,41 +11,38 @@ public sealed class FilteringWorker : BackgroundService
 {
         private readonly IProcessingQueue _queue;
         private readonly ITextFilter _filter;
-        private readonly IResultStore _store;
+        private readonly ITextDocumentRepository _repo;
         private readonly ILogger<FilteringWorker> _logger;
         private readonly double _threshold;
 
         public FilteringWorker(
             IProcessingQueue queue,
+            ITextDocumentRepository repo,
             ITextFilter filter,
-            IResultStore store,
             ILogger<FilteringWorker> logger,
-            double threshold = 0.8)
+            double threshold = 0.8
+              )
         {
-        _queue = queue;
-        _filter = filter;
-        _store = store;
-        _logger = logger;
-        _threshold = Math.Clamp(threshold, 0.0, 1.0);
-    }
+            _queue = queue;
+            _repo = repo;
+            _filter = filter;
+            _logger = logger;
+            _threshold = Math.Clamp(threshold, 0.0, 1.0);
+        }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        await foreach (var (uploadId, fullText) in _queue.DequeueAllAsync(stoppingToken))
-        {
-            try
+            while (!ct.IsCancellationRequested)
             {
-                var filtered = await _filter.FilterAsync(fullText, _threshold, stoppingToken);
-                await _store.StoreAsync(uploadId, filtered, stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Filtering failed for UploadId {UploadId}", uploadId);
+                var id = await _queue.DequeueAsync(ct);
+                var doc = await _repo.GetAsync(id, ct);
+                if (doc is null) continue;
+
+                var filtered = await _filter.FilterAsync(doc.OriginalText, _threshold, ct);
+
+                doc.ApplyFiltering(filtered, _threshold);
+                await _repo.UpdateAsync(doc, ct);
             }
         }
-    }
 }
 }

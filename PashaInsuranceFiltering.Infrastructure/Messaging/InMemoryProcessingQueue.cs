@@ -12,27 +12,25 @@ namespace PashaInsuranceFiltering.Infrastructure.Messaging
 {
     public sealed class InMemoryProcessingQueue : IProcessingQueue, IDisposable
     {
-        private readonly ConcurrentQueue<(Guid uploadId, string fullText)> _q = new();
+        private readonly ConcurrentQueue<Guid> _q = new();
         private readonly SemaphoreSlim _signal = new(0);
 
-        public Task EnqueueAsync(Guid uploadId, string fullText, CancellationToken ct = default)
+       
+        public Task EnqueueAsync(Guid uploadId, CancellationToken ct = default)
         {
-            _q.Enqueue((uploadId, fullText));
+            _q.Enqueue(uploadId);
             _signal.Release();
             return Task.CompletedTask;
         }
 
-        public async IAsyncEnumerable<(Guid uploadId, string fullText)> DequeueAllAsync(
-            [EnumeratorCancellation] CancellationToken ct = default)
+        public async Task<Guid> DequeueAsync(CancellationToken ct = default)
         {
-            while (!ct.IsCancellationRequested)
-            {
-                await _signal.WaitAsync(ct);
-                while (_q.TryDequeue(out var item))
-                    yield return item;
-            }
+            await _signal.WaitAsync(ct);
+            if (_q.TryDequeue(out var id)) return id;
+            throw new InvalidOperationException("Queue signaled but empty.");
         }
 
         public void Dispose() => _signal.Dispose();
+      
     }
 }

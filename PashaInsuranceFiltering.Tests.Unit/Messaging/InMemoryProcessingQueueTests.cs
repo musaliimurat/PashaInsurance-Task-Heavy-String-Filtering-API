@@ -1,132 +1,140 @@
 ﻿using FluentAssertions;
+using PashaInsuranceFiltering.Application.Common.Ports;
 using PashaInsuranceFiltering.Infrastructure.Messaging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Diagnostics;
+using Xunit;
 
 namespace PashaInsuranceFiltering.Tests.Unit.Messaging
 {
     public class InMemoryProcessingQueueTests
     {
         [Fact]
-        public async Task EnqueueThenDequeueShouldPreserveOrderForSameUpload()
+        public async Task EnqueueThenDequeueShouldReturnSameId()
         {
-            var queue = new InMemoryProcessingQueue();
+            IProcessingQueue q = new InMemoryProcessingQueue();
             var id = Guid.NewGuid();
 
-            await queue.EnqueueAsync(id, "First");
-            await queue.EnqueueAsync(id, "Second");
-            await queue.EnqueueAsync(id, "Third");
+            await q.EnqueueAsync(id, CancellationToken.None);
+            var got = await q.DequeueAsync(CancellationToken.None);
 
-            var cts = new CancellationTokenSource();
-            var enumerator = queue.DequeueAllAsync(cts.Token).GetAsyncEnumerator();
-
-            (await enumerator.MoveNextAsync()).Should().BeTrue();
-            enumerator.Current.uploadId.Should().Be(id);
-            enumerator.Current.fullText.Should().Be("First");
-
-            (await enumerator.MoveNextAsync()).Should().BeTrue();
-            enumerator.Current.fullText.Should().Be("Second");
-
-            (await enumerator.MoveNextAsync()).Should().BeTrue();
-            enumerator.Current.fullText.Should().Be("Third");
-
-            cts.Cancel();
+            got.Should().Be(id);
         }
 
         [Fact]
-        public async Task QueueShouldHandleMultipleUploadIdsInterleaved()
+        public async Task ShouldBlockUntilItemIsEnqueuedThenResume()
         {
-            var queue = new InMemoryProcessingQueue();
+            IProcessingQueue q = new InMemoryProcessingQueue();
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+            var dequeueTask = q.DequeueAsync(cts.Token);
+
+            await Task.Delay(100);
+            dequeueTask.IsCompleted.Should().BeFalse();
+
+            var id = Guid.NewGuid();
+            await q.EnqueueAsync(id, CancellationToken.None);
+
+            var got = await dequeueTask; 
+            got.Should().Be(id);
+        }
+
+        [Fact]
+        public async Task DequeueShouldBeFIF0ForMultipleItems()
+        {
+            IProcessingQueue q = new InMemoryProcessingQueue();
+
             var id1 = Guid.NewGuid();
             var id2 = Guid.NewGuid();
+            var id3 = Guid.NewGuid();
 
-            await queue.EnqueueAsync(id1, "FirstA");
-            await queue.EnqueueAsync(id2, "FirstB");
-            await queue.EnqueueAsync(id1, "SecondA");
-            await queue.EnqueueAsync(id2, "SecondB");
+            await q.EnqueueAsync(id1, CancellationToken.None);
+            await q.EnqueueAsync(id2, CancellationToken.None);
+            await q.EnqueueAsync(id3, CancellationToken.None);
 
-
-            var cts = new CancellationTokenSource();
-            var enumerator = queue.DequeueAllAsync(cts.Token).GetAsyncEnumerator();
-
-            var seen = new List<(Guid id, string text)>();
-            for (int i = 0; i < 4; i++)
-            {
-                (await enumerator.MoveNextAsync()).Should().BeTrue();
-                seen.Add((enumerator.Current.uploadId, enumerator.Current.fullText));
-            }
-
-            seen.Should().ContainInOrder(
-                (id1, "FirstA"),
-                (id2, "FirstB"),
-                (id1, "SecondA"),
-                (id2, "SecondB")
-            );
-
-            cts.Cancel();
+            (await q.DequeueAsync(CancellationToken.None)).Should().Be(id1);
+            (await q.DequeueAsync(CancellationToken.None)).Should().Be(id2);
+            (await q.DequeueAsync(CancellationToken.None)).Should().Be(id3);
         }
 
         [Fact]
-        public async Task DequeueAllAsyncShouldStopWhenCancelled()
+        public async Task DequeueShouldHonorCancellation()
         {
-            var queue = new InMemoryProcessingQueue();
-            var id = Guid.NewGuid();
+            IProcessingQueue q = new InMemoryProcessingQueue();
+            using var cts = new CancellationTokenSource();
 
-            await queue.EnqueueAsync(id, "OnlyItem");
+            var dequeueTask = q.DequeueAsync(cts.Token);
 
-            var cts = new CancellationTokenSource();
-            var enumerator = queue.DequeueAllAsync(cts.Token).GetAsyncEnumerator();
+            cts.CancelAfter(100);
 
-            (await enumerator.MoveNextAsync()).Should().BeTrue();
-            enumerator.Current.fullText.Should().Be("OnlyItem");
-
-            cts.Cancel();
-
-            Func<Task> act = async () =>
-            {
-                var moved = await enumerator.MoveNextAsync();
-                if (moved) throw new Exception("Enumerator should not continue after cancellation.");
-
-            };
-
-            await act.Should().NotThrowAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await dequeueTask);
         }
 
         [Fact]
-        public async Task EnqueueFromMultipleTasksThenDequeueShouldYieldAllItems()
+        public async Task ConcurrentProducersAndSingleConsumerPreserveOrderPerQueueing()
         {
-            var q = new InMemoryProcessingQueue();
-            var id = Guid.NewGuid();
+            IProcessingQueue q = new InMemoryProcessingQueue();
 
-            // 10 concurrent enqueues
-            var tasks = Enumerable.Range(1, 10)
-                .Select(i => q.EnqueueAsync(id, $"P{i}"))
-                .ToArray();
+            var total = 200;
+            var ids = Enumerable.Range(0, total).Select(_ => Guid.NewGuid()).ToArray();
 
-            await Task.WhenAll(tasks);
-
-            var cts = new CancellationTokenSource();
-            var enumerator = q.DequeueAllAsync(cts.Token).GetAsyncEnumerator();
-
-            var results = new List<string>();
-            for (int i = 0; i < 10; i++)
+            var p1 = Task.Run(async () =>
             {
-                (await enumerator.MoveNextAsync()).Should().BeTrue();
-                results.Add(enumerator.Current.fullText);
+                for (int i = 0; i < total; i += 2)
+                    await q.EnqueueAsync(ids[i], CancellationToken.None);
+            });
+
+            var p2 = Task.Run(async () =>
+            {
+                for (int i = 1; i < total; i += 2)
+                    await q.EnqueueAsync(ids[i], CancellationToken.None);
+            });
+
+            await Task.WhenAll(p1, p2);
+
+            // single consumer
+            var received = new List<Guid>(total);
+            for (int i = 0; i < total; i++)
+                received.Add(await q.DequeueAsync(CancellationToken.None));
+
+            received.Should().HaveCount(total);
+            received.Should().BeEquivalentTo(ids); 
+
+            var evens = ids.Where((_, i) => i % 2 == 0).ToArray();
+            var odds = ids.Where((_, i) => i % 2 == 1).ToArray();
+
+            int lastEvenPos = -1;
+            foreach (var id in evens)
+            {
+                var pos = received.IndexOf(id);
+                pos.Should().BeGreaterThan(lastEvenPos); 
+                lastEvenPos = pos;
             }
 
-            results.Should().HaveCount(10);
+            int lastOddPos = -1;
+            foreach (var id in odds)
+            {
+                var pos = received.IndexOf(id);
+                pos.Should().BeGreaterThan(lastOddPos);
+                lastOddPos = pos;
+            }
+        }
 
-            //FIFO
-            results.Should().ContainInOrder(Enumerable.Range(1, 10).Select(i => $"P{i}"));
+        [Fact]
+        public async Task StressItemsShouldAllBeDequeued()
+        {
+            IProcessingQueue q = new InMemoryProcessingQueue();
 
-            
-            //results.Should().BeEquivalentTo(Enumerable.Range(1, 10).Select(i => $"P{i}"));
+            var count = 1000;
+            var ids = Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).ToArray();
 
-            cts.Cancel();
+            foreach (var id in ids)
+                await q.EnqueueAsync(id, CancellationToken.None);
+
+            var got = new List<Guid>(count);
+            for (int i = 0; i < count; i++)
+                got.Add(await q.DequeueAsync(CancellationToken.None));
+
+            got.Should().BeEquivalentTo(ids, o => o.WithStrictOrdering());
         }
     }
 }

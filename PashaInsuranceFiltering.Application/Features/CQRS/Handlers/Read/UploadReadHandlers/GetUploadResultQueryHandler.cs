@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using PashaInsuranceFiltering.Application.Abstractions;
 using PashaInsuranceFiltering.Application.Common.Ports;
 using PashaInsuranceFiltering.Application.Features.CQRS.Queries.UploadQueries;
 using PashaInsuranceFiltering.Application.Features.CQRS.Results.UploadResults;
@@ -13,40 +14,26 @@ namespace PashaInsuranceFiltering.Application.Features.CQRS.Handlers.Read.Upload
 {
     public sealed class GetUploadResultQueryHandler : IRequestHandler<GetUploadResultQuery, IDataResult<GetUploadResultQueryResult>>
     {
-        private readonly IResultStore _resultStore;
+        private readonly ITextDocumentRepository _repo;
 
-        public GetUploadResultQueryHandler(IResultStore resultStore) => _resultStore = resultStore;
+        public GetUploadResultQueryHandler(ITextDocumentRepository repo) => _repo = repo;
 
         public async Task<IDataResult<GetUploadResultQueryResult>> Handle(GetUploadResultQuery request, CancellationToken cancellationToken)
         {
-            var (status, data) = await _resultStore.GetAsync(request.UploadId, cancellationToken);
+            var doc = await _repo.GetAsync(request.UploadId, cancellationToken);
 
-            return status switch
+            if (doc is null)
+                return new ErrorDataResult<GetUploadResultQueryResult>("Not Found");
+
+            if (!doc.IsProcessed)
+                return new SuccessDataResult<GetUploadResultQueryResult>(null,"Processing");
+
+            var result = new GetUploadResultQueryResult
             {
-               ProcessingStatus.Completed when data is not null =>
-                new SuccessDataResult<GetUploadResultQueryResult>(
-                    new GetUploadResultQueryResult { Data = data },
-                    "Upload processing completed successfully."
-                ),
-
-                ProcessingStatus.Pending =>
-                new ErrorDataResult<GetUploadResultQueryResult>(
-                    new GetUploadResultQueryResult(),
-                    "Upload is still being processed."
-                ),
-
-                ProcessingStatus.NotFound =>
-                    new ErrorDataResult<GetUploadResultQueryResult>(
-                        new GetUploadResultQueryResult(),
-                        "Upload not found."
-                    ),
-
-                _ =>
-                    new ErrorDataResult<GetUploadResultQueryResult>(
-                        new GetUploadResultQueryResult(),
-                        "Unknown status."
-                    )
+               Data = doc.FilteredText?.Value ?? string.Empty
             };
+
+            return new SuccessDataResult<GetUploadResultQueryResult>(result, "Completed");
         }
     }
 }

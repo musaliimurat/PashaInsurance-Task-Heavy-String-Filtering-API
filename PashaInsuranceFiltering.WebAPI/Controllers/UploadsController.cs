@@ -32,13 +32,13 @@ namespace PashaInsuranceFiltering.WebAPI.Controllers
         {
             var result = await _mediator.Send(new GetUploadResultQuery(uploadId), ct);
 
-            if (result.Success && result.Data is GetUploadResultQueryResult dto && !string.IsNullOrWhiteSpace(dto.Data))
+            if (result.Success && result.Data is GetUploadResultQueryResult queryResult && !string.IsNullOrWhiteSpace(queryResult.Data))
             {
                 return Ok(new
                 {
                     uploadId,
                     status = "Completed",
-                    data = dto.Data
+                    data = queryResult.Data,
                 });
             }
 
